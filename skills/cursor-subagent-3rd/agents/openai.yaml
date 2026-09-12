@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cursor Subagent 3rd"
+  short_description: "Delegate to selected third-party Cursor models"
+  default_prompt: "Use $cursor-subagent-3rd with GPT Sol for implementation and Claude Opus for review."

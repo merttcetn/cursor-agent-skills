@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grok Subagent"
+  short_description: "Delegate scoped tasks to Grok through Cursor CLI"
+  default_prompt: "Use $grok-subagent to delegate this task to Grok through Cursor CLI."
