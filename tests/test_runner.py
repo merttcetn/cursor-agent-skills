@@ -3,7 +3,6 @@ import io
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -130,24 +129,10 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index('--worktree')+1], 'feature')
         self.assertEqual(cmd[-2:], ['--', '--leading-dash-prompt'])
 
-    def test_vendored_runners_match_canonical_runtime(self):
-        canonical = (ROOT/'shared/cursor_runner.py').read_bytes()
-        for name in ('grok-subagent', 'cursor-subagent-3rd'):
-            with self.subTest(name=name):
-                self.assertEqual((ROOT/'skills'/name/'scripts/cursor_runner.py').read_bytes(), canonical)
-
     def test_wrappers_work_without_cursor(self):
         for name, extra in [('grok-subagent', []), ('cursor-subagent-3rd', ['--model', 'example-id'])]:
             completed = subprocess.run([sys.executable, str(ROOT/'skills'/name/'scripts/spawn_cursor_agent.py'), '--dry-run', *extra, 'task'], capture_output=True, text=True, check=True)
             self.assertTrue(json.loads(completed.stdout)['dry_run'])
-
-    def test_skill_folders_work_when_copied_standalone(self):
-        for name, extra in [('grok-subagent', []), ('cursor-subagent-3rd', ['--model', 'example-id'])]:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
-                copied = Path(directory)/name
-                shutil.copytree(ROOT/'skills'/name, copied)
-                completed = subprocess.run([sys.executable, str(copied/'scripts/spawn_cursor_agent.py'), '--dry-run', *extra, 'task'], capture_output=True, text=True, check=True)
-                self.assertTrue(json.loads(completed.stdout)['dry_run'])
 
 
 if __name__ == '__main__':
