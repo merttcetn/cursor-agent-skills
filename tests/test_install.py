@@ -72,7 +72,7 @@ class InstallTests(unittest.TestCase):
         custom = Path(self.temp.name)/'codex home'
         result = self.run_script('install.py', '--dry-run', destination=False, env={**os.environ, 'CODEX_HOME': str(custom)})
         self.assertEqual(result.returncode, 0)
-        self.assertIn(str(custom/'skills'), result.stdout)
+        self.assertIn(str((custom/'skills').resolve()), result.stdout)
         self.assertFalse(custom.exists())
 
     def test_source_destination_rejected(self):

@@ -110,7 +110,9 @@ class RunnerTests(unittest.TestCase):
                 code, data = self.invoke('grok', ['--prompt-file', str(prompt)])
             self.assertEqual(code, 0)
             self.assertTrue(prompt.exists())
-            self.assertIn(str(prompt.resolve()), run.call_args.args[0][-1])
+            instruction = run.call_args.args[0][-1]
+            encoded_path = instruction.split('from ', 1)[1].split(' first.', 1)[0]
+            self.assertEqual(Path(json.loads(encoded_path)), prompt.resolve())
             self.assertEqual(prompt.read_text(encoding='utf-8'), 'ş'*5000)
 
     def test_long_stdin_dry_run_does_not_create_temp_files(self):
