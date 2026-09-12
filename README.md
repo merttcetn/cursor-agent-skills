@@ -7,7 +7,7 @@
 [![Codex Skills](https://img.shields.io/badge/Codex-2_skills-111827?style=flat-square)](./skills)
 [![Cursor CLI](https://img.shields.io/badge/Cursor-CLI-2563EB?style=flat-square)](https://cursor.com/docs/cli/overview)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](./shared/cursor_runner.py)
-[![Validation](https://img.shields.io/badge/validation-offline_only-D97706?style=flat-square)](#validation-status)
+[![Offline tests](https://github.com/merttcetn/cursor-agent-skills/actions/workflows/tests.yml/badge.svg)](https://github.com/merttcetn/cursor-agent-skills/actions/workflows/tests.yml)
 
 [How it works](#how-it-works) · [Install](#installation) · [Choose models](#model-selection) · [Use](#usage) · [Resume](#continue-the-same-agent-session)
 
@@ -31,9 +31,9 @@ Use cursor-subagent-3rd with GPT Sol for implementation and Claude Opus for revi
 
 ## Why this exists
 
-Delegation should let you choose where work runs without moving the whole conversation. These skills give Codex a repeatable handoff: a self-contained prompt, an explicit model, a scoped workspace, and a JSON receipt with the result and session ID.
+Delegation should let you choose where work runs without moving the whole conversation. These skills give Codex a repeatable handoff: a self-contained prompt, an explicit model, a scoped workspace, and a JSON receipt with the result and session metadata when available.
 
-The two entry points share one Python runner. They differ in model selection, so fixes to execution, receipts, and prompt handling stay in one place.
+The two entry points share one Python implementation. Each invocation starts a separate runner process for one Cursor CLI call, so fixes to execution, receipts, and prompt handling stay in one place.
 
 | Skill | Model choice | Example |
 |---|---|---|
@@ -42,22 +42,27 @@ The two entry points share one Python runner. They differ in model selection, so
 
 ## How it works
 
+The diagram shows **one delegated call**. Codex chooses the model, prepares the prompt, and starts the runner. The runner invokes Cursor, converts its output into a receipt, and returns that receipt to Codex.
+
 ```mermaid
 flowchart TD
-    U[Your request] --> C[Current Codex session: scope, select models, coordinate]
-    C --> P[Self-contained prompts with file ownership]
-    P --> R[One shared Python runner]
-    subgraph Cursor[Cursor CLI · your Cursor account]
-        R --> A[Implementation agent]
-        R --> B[Independent research agent]
-        A --> V[Review agent after implementation]
+    U["Your request"] --> C["Current Codex session<br/>Scope, models, prompts, coordination"]
+    subgraph Local["Local execution — one process per call"]
+        R["Python runner invocation"]
+        CLI["Cursor CLI"]
+        R -->|"Invoke with prompt, model, workspace"| CLI
+        CLI -. "Output and metadata" .-> R
     end
-    A --> J[JSON receipts: result + session ID]
-    B --> J
-    V --> J
-    J --> C
-    C --> F[Verify changes and deliver the result]
+    C -->|"Dispatch one scoped task"| R
+    CLI -->|"Model request"| W["Cursor worker/session<br/>Uses your Cursor account"]
+    W -. "Response" .-> CLI
+    R -. "Runner-built receipt; session_id when available" .-> C
+    C -->|"After inspecting results and checks"| F["Deliver the result"]
 ```
+
+Solid arrows show requests and actions; dotted arrows show returned data. **Codex schedules the work.** The runner executes one CLI call and formats its result; it does not choose lanes, launch sibling agents, or schedule reviews.
+
+For independent tasks, Codex starts separate runner processes in parallel. A single worker is also valid. Implementation, research, and review are roles chosen for the task, not mandatory stages. To continue a worker, Codex starts another invocation with `--resume <session_id>`, the same workspace, and the selected model; see [session continuation](#continue-the-same-agent-session).
 
 **Delegated model calls use your Cursor account and its applicable usage limits.** Choosing GPT through this runner still uses Cursor; it does not start a native Codex worker. Choosing Claude does not start Claude Code or a separate provider API client.
 
@@ -87,7 +92,7 @@ python3 scripts/install.py --dry-run
 python3 scripts/install.py
 ```
 
-Once this repository has been published, obtain that checkout with:
+Or clone the repository from GitHub:
 
 ```bash
 git clone https://github.com/merttcetn/cursor-agent-skills.git
@@ -148,6 +153,23 @@ of the changes and test coverage. Resolve findings and report the checks run.
 ```
 
 Codex resolves both model IDs, dispatches implementation, inspects its receipt, then starts the reviewer against the completed changes. Review depends on implementation, so those stages run sequentially.
+
+```mermaid
+sequenceDiagram
+    participant C as Current Codex session
+    participant S as GPT Sol via Cursor
+    participant O as Claude Opus via Cursor
+    C->>S: Dispatch implementation through a runner process
+    S-->>C: CLI result returned as a runner-built receipt
+    C->>C: Inspect changes and implementation result
+    opt Review requested
+        C->>O: Dispatch read-only review through a new runner process
+        O-->>C: CLI result returned as a runner-built receipt
+        C->>C: Assess findings and arrange fixes if needed
+    end
+```
+
+This is one possible workflow. Each dispatch and return uses the runner shown above. Codex initiates both stages; workers do not dispatch one another. Any requested fixes and final checks remain under Codex's coordination.
 
 ### Delegate to Grok
 
@@ -259,7 +281,7 @@ On a timeout or failure, inspect partial work before retrying. Stopping the CLI 
 
 ## Validation status
 
-**Offline validation only. No real model execution has been validated for this package.**
+**Automated offline tests pass. Live validation is limited to one read-only review.**
 
 The included tests cover dry-run commands, explicit model selection, resume arguments, prompt handling, mocked receipts and timeouts, entry-point execution, and install/uninstall behavior in temporary directories. Mocks are synthetic test fixtures; they are not recorded model runs.
 
@@ -267,9 +289,11 @@ The included tests cover dry-run commands, explicit model selection, resume argu
 python3 -m unittest discover -s tests -v
 ```
 
-Local validation was performed on macOS. The GitHub Actions workflow is configured for Linux, macOS, and Windows with Python 3.10 and 3.13; its presence does not mean those hosted jobs have run. Symlink-dependent tests skip on hosts without symlink permission.
+The 18-test suite passed locally on macOS. All six hosted jobs also passed on Linux, macOS, and Windows with Python 3.10 and 3.13 in the [verified offline CI run](https://github.com/merttcetn/cursor-agent-skills/actions/runs/34690730205). Symlink-dependent tests skip on hosts without symlink permission.
 
-Live account access, model availability, actual editing quality, remote session continuation, MCP behavior, sandbox support, and worktree execution remain unverified. No performance or billing benchmarks are claimed.
+On September 12, 2026, one real `--mode ask` call through this package completed a read-only README review with the requested model ID `gpt-5.6-sol-xhigh`. It returned a result and session ID, and a before/after file hash comparison confirmed that repository files were unchanged. This confirms that particular dispatch and receipt path on the tested account; the receipt records the requested model, not independent proof of server-side model execution.
+
+Live editing, other models, parallel calls, remote session continuation, plan mode, MCP behavior, sandbox enforcement, and worktree execution remain unverified. No performance or billing benchmarks are claimed.
 
 ## Repository layout
 
@@ -296,7 +320,7 @@ cursor-agent-skills/
 
 ## License
 
-No license has been selected yet. A license file and license badge are intentionally absent; the repository owner will choose the terms before publication.
+No license has been selected yet. A license file and license badge are intentionally absent; licensing terms remain pending the repository owner's decision.
 
 ---
 
